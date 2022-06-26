@@ -77,7 +77,7 @@ ParseCType(tokenizer *Tokenizer)
     token TypeToken = GetToken(Tokenizer);
     assert(TypeToken.Type == Token_Identifier);
 
-    Result.Type = *ConvertCType(&TypeToken); //AllocateStringFromToken(&TypeToken);
+    Result.Type = *ConvertCType(&TypeToken);
 
     EatAllWhitespace(Tokenizer);
     
@@ -104,6 +104,39 @@ ParseCType(tokenizer *Tokenizer)
         }
     }
     GetToken(Tokenizer); // ;
+
+    return Result;
+}
+
+c_type
+ParseGoType(tokenizer *Tokenizer)
+{
+    c_type Result = { 0 };
+    Result.IsArray = false;
+
+    token NameToken = GetToken(Tokenizer);
+    assert(NameToken.Type == Token_Identifier);    
+    Result.Name = AllocateStringFromToken(&NameToken);
+
+    EatAllWhitespace(Tokenizer);
+
+    token TypeToken = GetToken(Tokenizer);
+    assert(TypeToken.Type == Token_Identifier);
+    Result.Type = *ConvertCType(&TypeToken);    
+
+    EatAllWhitespace(Tokenizer);
+
+    token Token = PeekToken(Tokenizer);
+    while (Token.Type != Token_EndOfLine)
+    {
+        Token = GetToken(Tokenizer);
+
+        if (Token.Type == Token_OpenBrace)
+        {
+            Result.IsArray = true;
+        }
+    }
+    GetToken(Tokenizer); // \n
 
     return Result;
 }
@@ -135,6 +168,105 @@ FreeRouteType(route_type *RouteType)
     }
 }
 
+bool
+ParseCTypedefRouteType(tokenizer *Tokenizer, route_type *RouteType)
+{
+    // NOTE(Oskar): Comes in after typedef struct
+    EatAllWhitespace(Tokenizer);
+    
+    if (!ExpectTokenType(Tokenizer, Token_OpenBracket))
+    {
+        // Syntaxt error
+        printf("Error Openbrace\n");
+        return false;
+    }
+
+    EatAllWhitespaceAndNewLine(Tokenizer);
+
+    token PeekingToken = PeekToken(Tokenizer);
+    while (PeekingToken.Type != Token_CloseBracket)
+    {
+        EatAllWhitespaceAndNewLine(Tokenizer);
+        c_type Type = ParseCType(Tokenizer);
+        
+        RouteType->Types[RouteType->NumberOfTypes++] = Type;
+
+        PeekingToken = PeekToken(Tokenizer);
+    }
+    GetToken(Tokenizer); // }
+    
+    EatAllWhitespaceAndNewLine(Tokenizer);
+    token TypeName = GetToken(Tokenizer);
+    assert(TypeName.Type == Token_Identifier);
+
+    RouteType->Name = malloc(TypeName.TextLength + 1);
+    memcpy(RouteType->Name, TypeName.Text, TypeName.TextLength);
+    RouteType->Name[TypeName.TextLength] = 0;
+    RouteType->NameLength = TypeName.TextLength;
+
+    if (!ExpectTokenType(Tokenizer, Token_Semicolon))
+    {
+        // Syntaxt error
+        printf("Error semicolon after typename\n");
+        return false;
+    }
+
+    return true;
+}
+
+bool
+ParseGolangRouteType(tokenizer *Tokenizer, route_type *RouteType)
+{
+    // NOTE(Oskar): Comes in after type struct
+    EatAllWhitespace(Tokenizer);
+
+    token TypeName = GetToken(Tokenizer);
+    if (TypeName.Type != Token_Identifier)
+    {
+        // Syntax error
+        printf("Error missing identifier\n");
+        return false;
+    }
+
+    EatAllWhitespace(Tokenizer);
+
+    if (!ExpectTokenTypeAndContent(Tokenizer, Token_Identifier, "struct"))
+    {
+        // Syntax error
+        printf("Error go struct\n");
+        return false;
+    }
+
+    EatAllWhitespace(Tokenizer);
+
+    if (!ExpectTokenType(Tokenizer, Token_OpenBracket))
+    {
+        // Syntaxt error
+        printf("Error go Openbrace\n");
+        return false;
+    }
+
+    EatAllWhitespaceAndNewLine(Tokenizer);
+
+    token PeekingToken = PeekToken(Tokenizer);
+    while (PeekingToken.Type != Token_CloseBracket)
+    {
+        EatAllWhitespaceAndNewLine(Tokenizer);
+        c_type Type = ParseGoType(Tokenizer);
+        
+        RouteType->Types[RouteType->NumberOfTypes++] = Type;
+
+        PeekingToken = PeekToken(Tokenizer);
+    }
+    GetToken(Tokenizer); // }
+
+    RouteType->Name = malloc(TypeName.TextLength + 1);
+    memcpy(RouteType->Name, TypeName.Text, TypeName.TextLength);
+    RouteType->Name[TypeName.TextLength] = 0;
+    RouteType->NameLength = TypeName.TextLength;
+
+    return true;
+}
 
 void
 ParseRouting(void *Argument)
@@ -160,66 +292,39 @@ ParseRouting(void *Argument)
                     {
                         if (strncmp(Scan, "@RouteType", 10) == 0)
                         {
-                            route_type *RouteType = Data->RouteTypes + Data->NumberOfRouteTypes++;           
+                            route_type *RouteType = Data->RouteTypes + Data->NumberOfRouteTypes;           
                             EatAllWhitespaceAndNewLine(&Tokenizer);
                             Token = GetToken(&Tokenizer);
 
+                            // NOTE(Oskar): Also accepts "type" which golang uses.
                             if (strncmp(Token.Text, "typedef", Token.TextLength) == 0)
                             {
+                                printf("Expected typedef toke: %.*s\n", (int)Token.TextLength, Token.Text);
                                 Token = GetToken(&Tokenizer);
 
                                 // Assume C
-                                if (!ExpectTokenTypeAndContent(&Tokenizer, Token_Identifier, "struct"))
+                                if (ExpectTokenTypeAndContent(&Tokenizer, Token_Identifier, "struct"))
                                 {
-                                    // Syntax error
-                                    printf("Error struct\n");
-                                    printf("ERROR AT: %.*s\n", (int)Token.TextLength, Token.Text);
-                                    Parsing = false;
-                                    break;
+                                    if (ParseCTypedefRouteType(&Tokenizer, RouteType))
+                                    {
+                                        Data->NumberOfRouteTypes++;
+                                    }
                                 }
-
-                                EatAllWhitespace(&Tokenizer);
-                                
-                                if (!ExpectTokenType(&Tokenizer, Token_OpenBracket))
+                                else
                                 {
-                                    // Syntaxt error
-                                    printf("Error Openbrace\n");
-                                    printf("ERROR AT: %.*s\n", (int)Token.TextLength, Token.Text);
-                                    Parsing = false;
-                                    break;
-                                }
-
-                                EatAllWhitespaceAndNewLine(&Tokenizer);
-
-                                // NOTE(Oskar): Found C Struct
-                                token PeekingToken = PeekToken(&Tokenizer);
-                                while (PeekingToken.Type != Token_CloseBracket)
-                                {
-                                    EatAllWhitespaceAndNewLine(&Tokenizer);
-                                    c_type Type = ParseCType(&Tokenizer);
-                                    
-                                    RouteType->Types[RouteType->NumberOfTypes++] = Type;
-
-                                    PeekingToken = PeekToken(&Tokenizer);
-                                }
-                                Token = GetToken(&Tokenizer); // }
-                                
-                                EatAllWhitespaceAndNewLine(&Tokenizer);
-                                token TypeName = GetToken(&Tokenizer);
-                                assert(TypeName.Type == Token_Identifier);
-
-                                RouteType->Name = malloc(TypeName.TextLength + 1);
-                                memcpy(RouteType->Name, TypeName.Text, TypeName.TextLength);
-                                RouteType->Name[TypeName.TextLength] = 0;
-                                RouteType->NameLength = TypeName.TextLength;
-
-                                if (!ExpectTokenType(&Tokenizer, Token_Semicolon))
-                                {
-                                    // Syntaxt error
-                                    printf("Error semicolon after typename\n");
-                                    printf("ERROR AT: %.*s\n", (int)Token.TextLength, Token.Text);
-                                    Parsing = false;
-                                    break;
+                                    if (ParseGolangRouteType(&Tokenizer, RouteType))
+                                    {
+                                        Data->NumberOfRouteTypes++;
+                                    }
+                                    else
+                                    {
+                                        // Syntax error
+                                        printf("Error struct\n");
+                                        printf("ERROR AT: %.*s\n", (int)Token.TextLength, Token.Text);
+                                        printf("Reading file: %s\n", Data->FilePath);
+                                        // Parsing = false;
+                                        continue;
+                                    }
                                 }
                             }
                             else 

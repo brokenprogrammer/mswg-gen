@@ -1,7 +1,7 @@
 # mswg-gen
 Custom OpenAPI generator that is used to generate swagger documentation using comments.
 
-The project currently has support for C language but can technically support any programming language 
+The project currently has support for C & Go language but can technically support any programming language 
 that makes use of C style comments. Some parsing has to be added however.
 
 The goal of this project is to have a fast swagger generator that is excluded from the project that can easily be integrated
@@ -96,6 +96,10 @@ The generated output can then be used together with the static swagger site prov
 within this repository: <https://github.com/swagger-api/swagger-ui>
 
 This is easy to set up by downloading the latest release and using the static HTML/JS/CSS within the downloaded `/dist` folder.
+
+## Disclaimer
+
+This application was written in a very short duration and a lot of shortcuts was taken. If you find bugs please file an issue or a pull request. 
 
 # License
 

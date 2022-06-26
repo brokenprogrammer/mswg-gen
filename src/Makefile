@@ -2,8 +2,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -g -Wall -Wno-switch -fsanitize=address
-
+CFLAGS = -Wno-switch -Wno-unused-result -O3
 # Object files
 OBJFILES = mswg_gen.o json.o mswg_parser.o settings.o token.o common.o threadpool.o file.o
 
