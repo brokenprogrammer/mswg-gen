@@ -16,5 +16,5 @@ jobs:
     - name: Build
       shell: cmd
       run: |
-      cd src
-      make
+        cd src
+        make release
